@@ -4,12 +4,13 @@
 {% load typedmodels_admin_tags %}
 {% load verbose_name_filters %}
 
-
 <li>
   {{ model|verbose_name|capfirst }}
-  <a href="{% url model|model_admin_urlname:'changelist' %}{% if is_popup %}?_popup=1{% endif %}" class="addlink">
-    {% trans "Change" %}
-  </a>
+  {% ifnotequal model current_model %}
+    <a href="{% url model|model_admin_urlname:'changelist' %}{% if is_popup %}?_popup=1{% endif %}" class="addlink">
+      {% trans "Change" %}
+    </a>
+  {% endifnotequal %}    
   {% if model.parent_typedmodel %}
     <a href="{% url model|model_admin_urlname:'add' %}{% if is_popup %}?_popup=1{% endif %}" class="addlink">
       {% trans "Add" %}
@@ -17,13 +18,7 @@
   {% endif %}
   <ul>
     {% for child_model in model.children_typedmodels %}
-      {% comment %}
-	See https://code.djangoproject.com/ticket/3544 for the reason why {% with %} is used here.
-	{% with "typedmodels/admin/_model_with_children_add_links.html" as child_template_name %}
-	  {% include child_template_name with model=child_model %}
-	{% endwith %}
-      {% endcomment %}
-      {% model_with_children_add_links child_model %}
+      {% links_for_model_with_children child_model %}
     {% endfor %}
   </ul>      
 </li>  
