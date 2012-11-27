@@ -1,0 +1,22 @@
+{% extends "admin/change_list.html" %}
+
+{% load i18n %}
+{% load model_admin_urls %}
+{% load url from future %}
+{% load typedmodels_admin_tags %}
+{% load verbose_name_filters %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=cl.opts.app_label %}">{{ app_label|capfirst|escape }}</a>
+    {% for ancestor in cl.model|typedmodel_ancestors %}
+      &rsaquo; <a href="{% url ancestor|model_admin_urlname:'changelist' %}">{{ ancestor|verbose_name|capfirst }}</a>
+    {% endfor %}      
+    &rsaquo; {{ cl.opts.verbose_name_plural|capfirst }}
+  </div>
+{% endblock %}
+
+{% block object-tools-items %}
+  {% model_with_children_add_links cl.model %}
+{% endblock %}
