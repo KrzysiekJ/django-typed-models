@@ -94,6 +94,12 @@ class TypedModelMetaclass(ModelBase):
             if typ in base_class._typedmodels_registry:
                 raise ValueError("Can't register %s type %r to %r (already registered to %r )" % (typ, classname, base_class._typedmodels_registry))
             base_class._typedmodels_registry[typ] = cls
+
+            parent_class = filter(lambda class_: issubclass(class_, TypedModel), bases)[0]
+            if parent_class in base_class._typedmodels_children_registry:
+                base_class._typedmodels_children_registry[parent_class].append(cls)
+            base_class._typedmodels_children_registry[cls] = []
+            
             type_name = getattr(cls._meta, 'verbose_name', cls.__name__)
             type_field = base_class._meta.get_field('type')
             type_field._choices = tuple(list(type_field.choices) + [(typ, type_name)])
@@ -138,6 +144,9 @@ class TypedModelMetaclass(ModelBase):
         else:
             # this is the base class
             cls._typedmodels_registry = {}
+
+            # Dictionary containing lists of immediate children for each class.
+            cls._typedmodels_children_registry = {cls: []}
 
             # Since fields may be added by subclasses, save original fields.
             cls._meta.original_fields = cls._meta.fields
@@ -258,6 +267,17 @@ class TypedModel(models.Model):
 
         if self.__class__ != correct_cls:
             self.__class__ = correct_cls
+
+    @classmethod
+    def children_typedmodels(cls):
+        return (cls.base_class or cls)._typedmodels_children_registry[cls]
+
+    @classmethod
+    def parent_typedmodel(cls):
+        try:
+            return filter(lambda class_: issubclass(class_, TypedModel) and not class_==TypedModel, cls.__bases__)[0]
+        except IndexError:
+            return None
 
     def save(self, *args, **kwargs):
         if not getattr(self, '_typedmodels_type', None):
