@@ -1,0 +1,22 @@
+{% extends "admin/change_form.html" %}
+
+{% load i18n %}
+{% load meta %}
+{% load model_admin_urls %}
+{% load url from future %}
+{% load typedmodels_admin_tags %}
+{% load verbose_name_filters %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ app_label|capfirst|escape }}</a>
+  {% for ancestor in adminform.form|meta:'model'|typedmodel_ancestors %}
+    &rsaquo; <a href="{% url ancestor|model_admin_urlname:'changelist' %}">{{ ancestor|verbose_name|capfirst }}</a>
+  {% endfor %}
+  {% with adminform.form|meta:'model' as model %}
+    &rsaquo; <a href="{% url model|model_admin_urlname:'changelist' %}">{{ model|verbose_name|capfirst }}</a>
+  {% endwith %}    
+&rsaquo; {% if add %}{% trans 'Add' %} {{ opts.verbose_name }}{% else %}{{ original|truncatewords:"18" }}{% endif %}
+</div>
+{% endblock %}
