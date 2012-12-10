@@ -292,7 +292,11 @@ class TypedModel(models.Model):
 
     @classmethod
     def children_typedmodels(cls):
-        return (cls.base_class or cls)._typedmodels_children_registry[cls]
+        try:
+            return (cls.base_class or cls)._typedmodels_children_registry[cls]
+        except KeyError:
+            # If model is not in registry, it may be a standard proxy model, so return children of its parent instead.
+            return cls.parent_typedmodel().children_typedmodels()
 
     @classmethod
     def parent_typedmodel(cls):
