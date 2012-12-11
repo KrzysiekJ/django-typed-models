@@ -7,7 +7,7 @@
 <li>
   {{ model|verbose_name|capfirst }}
   {% ifnotequal model current_model %}
-    <a href="{% url model|model_admin_urlname:'changelist' %}{% if is_popup %}?_popup=1{% endif %}" class="addlink">
+    <a href="{% url model|model_admin_urlname:'changelist' %}{% if is_popup %}?_popup=1{% endif %}" class="changelink">
       {% trans "Change" %}
     </a>
   {% endifnotequal %}    

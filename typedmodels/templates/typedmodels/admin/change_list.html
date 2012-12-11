@@ -17,6 +17,13 @@
   </div>
 {% endblock %}
 
-{% block object-tools-items %}
-  {% links_for_model_with_children cl.model %}
+{% block object-tools %}
+  {% if has_add_permission %}
+    {# Use different class for object list because default admin styles don't apply well here. #}
+    <ul class="typedmodels-object-tools">
+      {% block object-tools-items %}
+	{% links_for_model_with_children cl.model %}
+      {% endblock %}
+    </ul>
+  {% endif %}
 {% endblock %}
