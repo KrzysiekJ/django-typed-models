@@ -12,7 +12,7 @@ class TypedModelAdmin(admin.ModelAdmin):
         if self.model.children_typedmodels():
             obj = self.get_object(request, unquote(object_id))
             object_type = obj.type
-            return HttpResponseRedirect(reverse('admin:{}_change'.format('_'.join(object_type.split('.'))), args=(object_id,)))
+            return HttpResponseRedirect(reverse('{}:{}_change'.format(self.admin_site.name, '_'.join(object_type.split('.'))), args=(object_id,)))
         else:
             return super(TypedModelAdmin, self).change_view(request, object_id, *args, **kwargs)
 
