@@ -136,14 +136,13 @@ class TypedModelMetaclass(ModelBase):
             # be avoided, but in this case it may be better than monkey patching
             # Options or copy-pasting large parts of Django code.
             def _fill_fields_cache(self):
-                cache = []
-                for parent in self.parents:
-                    for field, model in parent._meta.get_fields_with_model():
-                        if field in base_class._meta.original._meta.fields or any(field in ancestor._meta.declared_fields.values() for ancestor in cls.mro() if issubclass(ancestor, base_class) and not ancestor==base_class):
-                            if model:
-                                cache.append((field, model))
-                            else:
-                                cache.append((field, parent))
+                if self.proxy:
+                    proxy_opts = self.proxy_for_model._meta
+                    proxy_opts._fill_fields_cache()
+                    cache = filter(lambda field_info: field_info[0] in base_class._meta.original._meta.fields or any(field_info[0] in ancestor._meta.declared_fields.values() for ancestor in cls.mro() if issubclass(ancestor, base_class) and not ancestor==base_class), proxy_opts._field_cache[:])
+                else:
+                    # Not entering this place anyway.
+                    pass
                 self._field_cache = tuple(cache)
                 self._field_name_cache = [x for x, _ in cache]
             cls._meta._fill_fields_cache = types.MethodType(_fill_fields_cache, cls._meta, cls._meta.__class__)
