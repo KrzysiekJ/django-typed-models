@@ -1,5 +1,6 @@
 # encoding: utf-8
 
+from __future__ import unicode_literals
 import types
 
 from django.core.serializers.python import Serializer
@@ -8,6 +9,8 @@ from django.db.models.base import ModelBase
 from django.db.models.fields import Field
 from django.utils.datastructures import SortedDict
 from django.utils.encoding import smart_text
+from django.utils import six
+
 
 class TypedModelManager(models.Manager):
     def get_query_set(self):
@@ -226,7 +229,7 @@ class TypedModelMetaclass(ModelBase):
         return cls
 
 
-class TypedModel(models.Model):
+class TypedModel(six.with_metaclass(TypedModelMetaclass, base=models.Model)):
     '''
     This class contains the functionality required to auto-downcast a model based
     on its ``type`` attribute.
@@ -259,8 +262,6 @@ class TypedModel(models.Model):
             def say_something(self):
                 return "meoww"
     '''
-
-    __metaclass__ = TypedModelMetaclass
 
     type = models.CharField(choices=(), max_length=255, null=False, blank=False, db_index=True)
 

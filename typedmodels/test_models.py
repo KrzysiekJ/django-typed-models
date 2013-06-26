@@ -1,8 +1,11 @@
+from __future__ import unicode_literals
 
 from django.db import models
+from django.utils.encoding import python_2_unicode_compatible
 from typedmodels import TypedModel
 
 
+@python_2_unicode_compatible
 class Animal(TypedModel):
     """
     Abstract model
@@ -15,8 +18,8 @@ class Animal(TypedModel):
     # def __repr__(self):
     #     return u'<%s: %s>' % (self.__class__.__name__, self.name)
 
-    def __unicode__(self):
-        return unicode(self.name)
+    def __str__(self):
+        return str(self.name)
 
 
 class Canine(Animal):
@@ -59,6 +62,7 @@ class Parrot(Animal):
         return "hello"
 
 
+@python_2_unicode_compatible
 class AnotherTypedModel(TypedModel):
     """
     This is an entirely different typed model.
