@@ -1,23 +1,36 @@
 # encoding: utf-8
 
+import django
 import types
 
-from django.core.serializers.python import Serializer
+from django.core.serializers.python import Serializer as _PythonSerializer
+from django.core.serializers.xml_serializer import Serializer as _XmlSerializer
 from django.db import models
 from django.db.models.base import ModelBase
 from django.db.models.fields import Field
 from django.utils.datastructures import SortedDict
 from django.utils.encoding import smart_text
 
+from .compat import with_metaclass
+
 class TypedModelManager(models.Manager):
-    def get_query_set(self):
-        qs = super(TypedModelManager, self).get_query_set()
+    def get_queryset(self):
+        super_ = super(TypedModelManager, self)
+        if django.VERSION < (1, 7):
+            qs = super_.get_query_set()
+        else:
+            qs = super_.get_queryset()
         if hasattr(self.model, '_typedmodels_type'):
             if len(self.model._typedmodels_subtypes) > 1:
                 qs = qs.filter(type__in=self.model._typedmodels_subtypes)
             else:
                 qs = qs.filter(type=self.model._typedmodels_type)
         return qs
+    # rant: why oh why would you rename something so widely used?
+    if django.VERSION < (1, 7):
+        # in 1.7+, get_query_set gets defined by the base manager and complains if it's called.
+        # otherwise, we have to define it ourselves.
+        get_query_set = get_queryset
 
 
 class TypedModelMetaclass(ModelBase):
@@ -25,6 +38,10 @@ class TypedModelMetaclass(ModelBase):
     This metaclass enables a model for auto-downcasting using a ``type`` attribute.
     """
     def __new__(meta, classname, bases, classdict):
+        # artifact created by with_metaclass, needed for py2/py3 compatibility
+        if classname == 'NewBase':
+            return super(TypedModelMetaclass, meta).__new__(
+                meta, classname, bases, classdict)
         try:
             TypedModel
         except NameError:
@@ -58,7 +75,7 @@ class TypedModelMetaclass(ModelBase):
                 base_class._meta.original = Original
                 # Fill m2m cache for original class now, so it doesn't contain fields from child classes.
                 base_class._meta.original._meta.many_to_many
-            
+
             # Enforce that subclasses are proxy models.
             # Update an existing metaclass, or define an empty one
             # then set proxy=True
@@ -93,7 +110,7 @@ class TypedModelMetaclass(ModelBase):
                             cls._meta.model_name = base_class_name.lower()
                         else:
                             cls._meta.object_name = base_class_name
-                    field.do_related_class = types.MethodType(do_related_class, field, field.__class__)
+                    field.do_related_class = types.MethodType(do_related_class, field)
                 if isinstance(field, models.fields.related.RelatedField) and isinstance(field.rel.to, TypedModel) and field.rel.to.base_class:
                     field.rel.limit_choices_to['type__in'] = field.rel.to._typedmodels_subtypes
                     field.rel.to = field.rel.to.base_class
@@ -118,6 +135,15 @@ class TypedModelMetaclass(ModelBase):
 
         if base_class:
             opts = cls._meta
+
+            # Dr Hacky "the hack" McHackerson, Sr.
+            # Django's deserialization code doesn't trigger sequence resets for proxy models.
+            # That's cool usually, but our deserialized models are alway going to be recasted
+            # to proxies, so the sequences will always have the wrong value after fixture loading.
+            # Turns out Django triggers sequence resets based on whether there's PK fields in
+            # opts.local_fields (which is normally empty for proxies.) So we hack it!
+            opts.local_fields[:] = base_class._meta.local_fields[:]
+
             # model_name was introduced in commit ec469ad in Django.
             if hasattr(opts, 'model_name'):
                 model_name = opts.model_name
@@ -142,10 +168,11 @@ class TypedModelMetaclass(ModelBase):
             cls._meta.declared_fields = declared_fields
 
             # Update related fields in base_class so they refer to cls.
-            for field_name, related_field in filter(lambda (field_name, field): isinstance(field, models.fields.related.RelatedField), declared_fields.items()):
-                # Unfortunately RelatedObject is recreated in ./manage.py validate, so false positives for name clashes
-                # may be reported until #19399 is fixed - see https://code.djangoproject.com/ticket/19399
-                related_field.related.opts = cls._meta
+            for field_name, related_field in declared_fields.items():
+                if isinstance(related_field, models.fields.related.RelatedField):
+                    # Unfortunately RelatedObject is recreated in ./manage.py validate, so false positives for name clashes
+                    # may be reported until #19399 is fixed - see https://code.djangoproject.com/ticket/19399
+                    related_field.related.opts = cls._meta
 
             # look for any other proxy superclasses, they'll need to know
             # about this subclass
@@ -172,7 +199,7 @@ class TypedModelMetaclass(ModelBase):
                                 cache.append((field, parent))
                 self._field_cache = tuple(cache)
                 self._field_name_cache = [x for x, _ in cache]
-            cls._meta._fill_fields_cache = types.MethodType(_fill_fields_cache, cls._meta, cls._meta.__class__)
+            cls._meta._fill_fields_cache = types.MethodType(_fill_fields_cache, cls._meta)
             if hasattr(cls._meta, '_field_name_cache'):
                 del cls._meta._field_name_cache
             if hasattr(cls._meta, '_field_cache'):
@@ -194,7 +221,7 @@ class TypedModelMetaclass(ModelBase):
                 for field in self.local_many_to_many:
                     cache[field] = None
                 self._m2m_cache = cache
-            cls._meta._fill_m2m_cache = types.MethodType(_fill_m2m_cache, cls._meta, cls._meta.__class__)
+            cls._meta._fill_m2m_cache = types.MethodType(_fill_m2m_cache, cls._meta)
             if hasattr(cls._meta, '_m2m_cache'):
                 del cls._meta._m2m_cache
             cls._meta._fill_m2m_cache()
@@ -224,17 +251,23 @@ class TypedModelMetaclass(ModelBase):
             # add a get_type_classes classmethod to allow fetching of all the subclasses (useful for admin)
 
             def get_type_classes(subcls):
-                # This is a bit inconsistent since there is _typedmodels_subtypes
-                # attribute on subclasses. Perhaps it should be unified to achieve
-                # similar behavior on both root class and it's subclasses.
-                if subcls is not cls:
-                    raise ValueError("get_type_classes() is not accessible from subclasses of %s (was called from %s)" % (cls.__name__, subcls.__name__))
-                return cls._typedmodels_registry.values()[:]
+                if subcls is cls:
+                    return list(cls._typedmodels_registry.values())
+                else:
+                    return [cls._typedmodels_registry[k] for k in subcls._typedmodels_subtypes]
             cls.get_type_classes = classmethod(get_type_classes)
+
+            def get_types(subcls):
+                if subcls is cls:
+                    return cls._typedmodels_registry.keys()
+                else:
+                    return subcls._typedmodels_subtypes[:]
+            cls.get_types = classmethod(get_types)
+
         return cls
 
 
-class TypedModel(models.Model):
+class TypedModel(with_metaclass(TypedModelMetaclass, models.Model)):
     '''
     This class contains the functionality required to auto-downcast a model based
     on its ``type`` attribute.
@@ -268,8 +301,6 @@ class TypedModel(models.Model):
                 return "meoww"
     '''
 
-    __metaclass__ = TypedModelMetaclass
-
     type = models.CharField(choices=(), max_length=255, null=False, blank=False, db_index=True)
 
     # Class variable indicating if model should be automatically recasted after initialization
@@ -289,8 +320,8 @@ class TypedModel(models.Model):
             raise IndexError("Number of args exceeds number of fields")
         for field_value, field in zip(args, self._meta.fields):
             kwargs[field.attname] = field_value
-            args.pop(0)
-            
+        args = []  # args were all converted to kwargs
+
         if self.base_class:
             before_class = self.__class__
             self.__class__ = self.base_class
@@ -302,7 +333,7 @@ class TypedModel(models.Model):
         if self._auto_recast:
             self.recast()
 
-    def recast(self):
+    def recast(self, typ=None):
         if not self.type:
             if not hasattr(self, '_typedmodels_type'):
                 # Ideally we'd raise an error here, but the django admin likes to call
@@ -317,10 +348,22 @@ class TypedModel(models.Model):
         else:
             raise ValueError("No suitable base class found to recast!")
 
+        if typ is None:
+            typ = self.type
+        else:
+            if isinstance(typ, type) and issubclass(typ, base):
+                if django.VERSION < (1, 7):
+                    model_name = typ._meta.module_name
+                else:
+                    model_name = typ._meta.model_name
+                typ = '%s.%s' % (typ._meta.app_label, model_name)
+
         try:
-            correct_cls = base._typedmodels_registry[self.type]
+            correct_cls = base._typedmodels_registry[typ]
         except KeyError:
-            raise ValueError("Invalid %s identifier : %r" % (base.__name__, self.type))
+            raise ValueError("Invalid %s identifier: %r" % (base.__name__, typ))
+
+        self.type = typ
 
         if self.__class__ != correct_cls:
             self.__class__ = correct_cls
@@ -346,13 +389,36 @@ class TypedModel(models.Model):
         return super(TypedModel, self).save(*args, **kwargs)
 
 
-# Monkey patching Python serializer class in Django to use model name from base class.
+# Monkey patching Python and XML serializers in Django to use model name from base class.
 # This should be preferably done by changing __unicode__ method for ._meta attribute in each model,
 # but it doesn’t work.
-def get_dump_object(self, obj):
-    return {
-        "pk": smart_text(obj._get_pk_val(), strings_only=True),
-        "model": smart_text(getattr(obj, 'base_class', obj)._meta),
-        "fields": self._current
-    }
-Serializer.get_dump_object = get_dump_object
+_python_serializer_get_dump_object = _PythonSerializer.get_dump_object
+def _get_dump_object(self, obj):
+    if isinstance(obj, TypedModel):
+        return {
+            "pk": smart_text(obj._get_pk_val(), strings_only=True),
+            "model": smart_text(getattr(obj, 'base_class', obj)._meta),
+            "fields": self._current
+        }
+    else:
+        return _python_serializer_get_dump_object(self, obj)
+_PythonSerializer.get_dump_object = _get_dump_object
+
+_xml_serializer_start_object = _XmlSerializer.start_object
+def _start_object(self, obj):
+    if isinstance(obj, TypedModel):
+        self.indent(1)
+        obj_pk = obj._get_pk_val()
+        modelname = smart_text(getattr(obj, 'base_class', obj)._meta)
+        if obj_pk is None:
+            attrs = {"model": modelname,}
+        else:
+            attrs = {
+                "pk": smart_text(obj._get_pk_val()),
+                "model": modelname,
+            }
+
+        self.xml.startElement("object", attrs)
+    else:
+        return _xml_serializer_start_object(self, obj)
+_XmlSerializer.start_object = _start_object

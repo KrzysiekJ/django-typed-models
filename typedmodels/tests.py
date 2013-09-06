@@ -1,4 +1,4 @@
-import unittest
+from django.utils import unittest
 try:
     import yaml
     PYYAML_AVAILABLE = True
@@ -8,7 +8,7 @@ except ImportError:
 from django.core import serializers
 from django.test import TestCase
 
-from .test_models import AngryBigCat, Animal, BigCat, Canine, Feline, Parrot
+from .test_models import AngryBigCat, Animal, BigCat, Canine, Feline, Parrot, AnotherTypedModel
 
 
 class SetupStuff(TestCase):
@@ -19,6 +19,7 @@ class SetupStuff(TestCase):
         BigCat.objects.create(name="simba")
         AngryBigCat.objects.create(name="mufasa")
         Parrot.objects.create(name="Kajtek")
+
 
 class TestTypedModels(SetupStuff):
     def test_cant_instantiate_base_model(self):
@@ -33,6 +34,16 @@ class TestTypedModels(SetupStuff):
             Animal.objects.create(name="dingo", type="macaroni.buffaloes")
         except ValueError:
             pass
+
+    def test_get_types(self):
+        self.assertEqual(set(Animal.get_types()), set(['typedmodels.canine', 'typedmodels.bigcat', 'typedmodels.parrot', 'typedmodels.angrybigcat', 'typedmodels.feline']))
+        self.assertEqual(set(Canine.get_types()), set(['typedmodels.canine']))
+        self.assertEqual(set(Feline.get_types()), set(['typedmodels.bigcat', 'typedmodels.angrybigcat', 'typedmodels.feline']))
+
+    def test_get_type_classes(self):
+        self.assertEqual(set(Animal.get_type_classes()), set([Canine, BigCat, Parrot, AngryBigCat, Feline]))
+        self.assertEqual(set(Canine.get_type_classes()), set([Canine]))
+        self.assertEqual(set(Feline.get_type_classes()), set([BigCat, AngryBigCat, Feline]))
 
     def test_base_model_queryset(self):
         # all objects returned
@@ -68,6 +79,30 @@ class TestTypedModels(SetupStuff):
         self.assertEqual([obj.type for obj in qs], ['typedmodels.angrybigcat'])
         self.assertEqual([type(obj) for obj in qs], [AngryBigCat])
 
+    def test_recast_auto(self):
+        cat = Feline.objects.get(name='kitteh')
+        cat.type = 'typedmodels.bigcat'
+        cat.recast()
+        self.assertEqual(cat.type, 'typedmodels.bigcat')
+        self.assertEqual(type(cat), BigCat)
+
+    def test_recast_string(self):
+        cat = Feline.objects.get(name='kitteh')
+        cat.recast('typedmodels.bigcat')
+        self.assertEqual(cat.type, 'typedmodels.bigcat')
+        self.assertEqual(type(cat), BigCat)
+
+    def test_recast_modelclass(self):
+        cat = Feline.objects.get(name='kitteh')
+        cat.recast(BigCat)
+        self.assertEqual(cat.type, 'typedmodels.bigcat')
+        self.assertEqual(type(cat), BigCat)
+
+    def test_recast_fail(self):
+        cat = Feline.objects.get(name='kitteh')
+        self.assertRaises(ValueError, cat.recast, AnotherTypedModel)
+        self.assertRaises(ValueError, cat.recast, 'typedmodels.anothertypedmodel')
+
     def test_fields_in_subclasses(self):
         canine = Canine.objects.all()[0]
         angry = AngryBigCat.objects.all()[0]
@@ -75,7 +110,7 @@ class TestTypedModels(SetupStuff):
         angry.mice_eaten = 5
         angry.save()
         self.assertEqual(AngryBigCat.objects.get(pk=angry.pk).mice_eaten, 5)
-        
+
         angry.canines_eaten.add(canine)
         self.assertEqual(list(angry.canines_eaten.all()), [canine])
 
@@ -101,23 +136,20 @@ class TestTypedModels(SetupStuff):
         self.assertIn(canines_eaten, AngryBigCat._meta.many_to_many)
         self.assertNotIn(canines_eaten, Feline._meta.many_to_many)
         self.assertNotIn(canines_eaten, Parrot._meta.many_to_many)
-        
+
     def test_related_names(self):
         '''Ensure that accessor names for reverse relations are generated properly.'''
 
         canine = Canine.objects.all()[0]
         self.assertTrue(hasattr(canine, 'angrybigcat_set'))
 
-
     def _check_serialization(self, serialization_format):
         """Helper function used to check serialization and deserialization for concrete format."""
-
-        animals = Animal.objects.all()
+        animals = Animal.objects.order_by('pk')
         serialized_animals = serializers.serialize(serialization_format, animals)
         deserialized_animals = [wrapper.object for wrapper in serializers.deserialize(serialization_format, serialized_animals)]
-        self.assertItemsEqual(deserialized_animals, animals)
+        self.assertEqual(set(deserialized_animals), set(animals))
 
-    @unittest.expectedFailure
     def test_xml_serialization(self):
         self._check_serialization('xml')
 

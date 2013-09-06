@@ -3,4 +3,7 @@ build
 *.pyo
 dist
 MANIFEST
+.coverage
+pip-log.txt
+*.egg-info
 *~

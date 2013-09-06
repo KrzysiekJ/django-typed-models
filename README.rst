@@ -2,8 +2,11 @@
 django-typed-models
 ===================
 
-.. image:: https://travis-ci.org/KrzysiekJ/django-typed-models.png?branch=master
-   :target: https://travis-ci.org/KrzysiekJ/django-typed-models
+.. image:: https://travis-ci.org/craigds/django-typed-models.png?branch=master
+   :target: https://travis-ci.org/craigds/django-typed-models
+
+.. image:: https://coveralls.io/repos/craigds/django-typed-models/badge.png?branch=master
+   :target: https://coveralls.io/r/craigds/django-typed-models?branch=master
 
 Intro
 =====
@@ -74,6 +77,16 @@ An example says a bunch of words::
     >>> print Feline.objects.all()
     [<Feline: kitteh>, <Feline: cheetah>]
 
+You can actually change the types of objects. Simply run an update query::
+
+    Feline.objects.update(type='myapp.bigcat')
+
+If you want to change the type of an object without refreshing it from the database, you can call ``recast``::
+
+    kitty.recast(BigCat)
+    # or kitty.recast('myapp.bigcat')
+    kitty.save()
+
 
 Limitations
 ===========
@@ -84,12 +97,11 @@ Known issues
 ============
 
 * Error in South migration when m2m field related to model not inheriting directly from TypedModel is used.
-* Problems with relative imports on some environments.
 * XML serialization doesn’t work.
 
 Requirements
 ============
 
-* Python 2.5+ (tested in 2.7)
+* Python 2.6, 2.7, 3.3
 
 * Django 1.5+
